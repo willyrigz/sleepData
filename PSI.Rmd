@@ -1,0 +1,980 @@
+---
+title: "D17129187_PSI_CA2"
+Student Number: "D17129187"
+Student Name: "Orighomisan Omatsone"
+Programme Code: "D228A"
+R version: "3.5.1"
+author: "Orighomisan Omatsone"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+### Libraries Used
+setwd("C:/Users/Misan/Documents/probability_and_statistiscs/CA2")
+
+library(knitr)
+library(foreign)
+library(dplyr)
+library(pander) # For creating a table
+library(pastecs) #For creating descriptive statistic summaries
+library(ggplot2) #For creating histograms with more detail than plot
+library(psych) # Some useful descriptive functions
+library(semTools) #For skewness and kurtosis
+library(car) # For Levene's test for homogeneity of variance
+library(coin) #for Wilcoxon test
+library(pgirmess) #for kruskalmc
+library(QuantPsyc)
+library(boot)
+opts_chunk$set(echo = TRUE)
+```
+
+
+# 1. Introduction
+
+This research investigates predicting the weight of an individual based on a set of variables
+
+Now with multiple linear regression our new research question is **Can the weight of an individual be predicted given height, and age as our independent predictor variables and how much variance could be considered to be explained by the predictor variables. What difference does the addition of sex as a predictor do to the predictive power of our model.**
+
+
+
+```{r, include=FALSE}
+sleepData <- read.csv('sleep5ED.csv')
+sleepRegData <- subset(sleepData, select=c('weight','height','age','sex'))
+sleepRegData$sex <- factor(sleepRegData$sex, levels = c(0:1), labels = c('Female','Male'))
+
+```
+
+# 2. METHODOLOGY
+
+This research will explore the relationship between our predictors and outcome variable in order to justify their inclusion as predictors.
+
+Standardised scores for skewness and kurtosis ranging from +/-2 are considered acceptable in order to be categorised as a normal distribution (George & Mallery, 2010). As our dataset is more than 80, distributions are considered normal if 95% of the standardised scores fall between +/-3.29 (Field, Miles, & Field, 2012). While cases with missing data and outliers will be handled with the guidance of Andy Fields Discovering statistics using R.
+
+For our tests, a p value lower than .05 is considered significant (Field, Miles, & Field, 2012).
+
+In our handling of effect sizes, The guidance of Andy Fields Discovering statistics using R has been conuslted based on suggestions of Cohen (Field, Miles, & Field, 2012).
+
+* r = .10 (small effect): In this case the effect explains 1% of the total variance.
+* r = .30 (medium effect): The effect accounts for 9% of the total variance.
+* r = .50 (large effect): The effect accounts for 25% of the variance.
+
+According to Andy Fields, dn effect size is basically used to measure the impact of a difference in our research. Because it's standardized it can be compared to various effect sizes from different researches and different variables (Field, Miles, & Field, 2012).
+
+## 2.1 Variables of interest
+The variables of interest used in this research are shown below:
+
+```{r  vars_interest table-simple,  results='asis'}
+panderOptions('table.split.table', Inf)
+
+my.data <- " 
+  Concept                       | Variable Name     | Statistical Type        | Possible Values
+ Weight                          | weight           | Scale                   | Range from 43 to 160
+ Height                         | height           | Scale                   | Range from 150 to 199
+  Age                           | age               | Scale                   | Range from 18 to 84
+  Sex                          | sex               | Nominal                 | 0=female; 1=male"
+
+df <- read.delim(textConnection(my.data),header=FALSE,sep="|",strip.white=TRUE,stringsAsFactors=FALSE)
+names(df) <- unname(as.list(df[1,])) # put headers on
+df <- df[-1,] # remove first row
+row.names(df)<-NULL
+pander(df, style = 'rmarkdown')
+
+```
+
+### 2.1.1 Dataset
+
+Our data was gotten from respondents at a university who filled a survey.
+
+
+## 2.2 Variable Inspection
+```{r variable_insp_summ}
+
+summary(sleepRegData)
+describe(sleepRegData[,-4])
+
+```
+
+### 2.2.1 Weight 
+```{r variable_insp_weight}
+# histogram weight
+theme_update(plot.title = element_text(hjust = 0.5, face="bold"))
+gg <- ggplot(sleepRegData, aes(x=weight)) + labs(x="Weight") +
+        geom_histogram(binwidth=2, colour="black", aes(y=..density.., fill=..count..)) + 
+        scale_fill_gradient("Count", low="#DCDCDC", high="#7C7C7C") +
+        stat_function(fun=dnorm, color="red",args=list(mean=mean(sleepRegData$weight, na.rm=TRUE), sd=sd(sleepRegData$weight, na.rm=TRUE))) + 
+        ggtitle('Figure 1: Distribution of Weight')
+
+gg
+
+#qqplot for weight
+qqnorm(sleepRegData$weight, main="Figure 2: QQPlot of Weight")
+qqline(sleepRegData$weight, col=2) #show a line on theplot
+
+#skewness and kurtosis from semTools with standard error 
+tpskew<-skew(sleepRegData$weight)
+tpkurt<-kurtosis(sleepRegData$weight)
+#We divide the skew statistic by the standard error to get the standardised score
+stdskew<-tpskew[1]/tpskew[2]
+stdkurt<-tpkurt[1]/tpkurt[2]
+
+# standardised skew for weight
+stdskew
+
+# standardised kurtosis for weight
+stdkurt
+
+#Use dplyr filter to filter out the rows with a standardised value outsude the range
+outliers <- sleepRegData %>% 
+  filter(scale(weight) >3.29 | scale(weight) < -3.29)
+
+#count them using dplyr summarize
+numoutliers<-outliers %>% summarize(count=n())
+fullcount<-sleepRegData %>% summarize(count=n())
+
+round((numoutliers/fullcount)*100, digits=2)
+
+```
+
+### 2.2.2 Height (height)
+
+```{r variable_insp_height}
+# histogram height
+theme_update(plot.title = element_text(hjust = 0.5, face="bold"))
+gg <- ggplot(sleepRegData, aes(x=height)) + labs(x="Height") +
+        geom_histogram(binwidth=2, colour="black", aes(y=..density.., fill=..count..)) + 
+        scale_fill_gradient("Count", low="#DCDCDC", high="#7C7C7C") +
+        stat_function(fun=dnorm, color="red",args=list(mean=mean(sleepRegData$height, na.rm=TRUE), sd=sd(sleepRegData$height, na.rm=TRUE))) + 
+        ggtitle('Figure 3: Distribution of Height')
+
+gg
+
+#qqplot for height
+qqnorm(sleepRegData$height, main="Figure 4: QQPlot of Stress Levels")
+qqline(sleepRegData$height, col=2) #show a line on theplot
+
+#skewness and kurtosis for height variable from semTools with standard error 
+tpskew<-skew(sleepRegData$height)
+tpkurt<-kurtosis(sleepRegData$height)
+#We divide the skew statistic by the standard error to get the standardised score
+stdskew<-tpskew[1]/tpskew[2]
+stdkurt<-tpkurt[1]/tpkurt[2]
+
+#standardised skewness for height
+stdskew
+
+#standardised kurtosis for height
+stdkurt
+
+#Use dplyr filter to filter out the rows with a standardised value outsude the range
+outliers <- sleepRegData %>% 
+  filter(scale(height) >3.29 | scale(height) < -3.29)
+
+#count them using dplyr summarize
+numoutliers<-outliers %>% summarize(count=n())
+fullcount<-sleepRegData %>% summarize(count=n())
+
+# % outside range
+round((numoutliers/fullcount)*100, digits=2)
+
+```
+
+### 2.2.3 Age (age)
+
+```{r variable_insp_age}
+theme_update(plot.title = element_text(hjust = 0.5, face="bold"))
+gg <- ggplot(sleepRegData, aes(x=age)) + labs(x="Age") +
+        geom_histogram(binwidth=2, colour="black", aes(y=..density.., fill=..count..)) + 
+        scale_fill_gradient("Count", low="#DCDCDC", high="#7C7C7C") +
+        stat_function(fun=dnorm, color="red",args=list(mean=mean(sleepRegData$age, na.rm=TRUE), sd=sd(sleepRegData$age, na.rm=TRUE))) + 
+        ggtitle('Figure 5: Distribution of Age')
+
+gg
+
+#qqplot for age
+qqnorm(sleepRegData$age, main="Figure 6: QQPlot of Age")
+qqline(sleepRegData$age, col=2) #show a line on theplot
+
+#skewness and kurtosis from semTools with standard error 
+tpskew<-skew(sleepRegData$age)
+tpkurt<-kurtosis(sleepRegData$age)
+
+#We divide the skew statistic by the standard error to get the standardised score
+stdskew<-tpskew[1]/tpskew[2]
+stdkurt<-tpkurt[1]/tpkurt[2]
+
+# standardised skewness
+stdskew
+
+# standardised kurtosis
+stdkurt
+
+#Use dplyr filter to filter out the rows with a standardised value outsude the range
+outliers <- sleepRegData %>% 
+  filter(scale(age) >3.29 | scale(age) < -3.29)
+
+#count them using dplyr summarize
+numoutliers<-outliers %>% summarize(count=n())
+fullcount<-sleepRegData %>% summarize(count=n())
+
+# % outside range
+round((numoutliers/fullcount)*100, digits=2)
+
+```
+
+
+### 2.2.5 Report of normality analysis
+
+Following the inspection of the qqplots in Figures 1-3 and density histograms in figure 4 and given that standardised scores for skewness and kurtosis can range from +/-2 and 95% of the standardised scores fall should between +/-3.29 (given that our dataset is more than 80) to be considered normal, inspection of each of our continous variables yields below.
+
+
+```{r  var_norm_report table-simple,  results='asis'}
+panderOptions('table.split.table', Inf)
+
+my.data <- "  
+Variable  |  Mean   |  std Skewness           |  std Kurtosis           |  Std Deviation  | % std scores of Outside +-3.29  | No. of Cases
+weight    |  73.38  |  6.50                   |  11.18                  |  15.28          |  .37                            |  249
+height    |  170.22 |  2.27                   |  -1.95                  |  10.28          |  0                              |  246
+age       |  43.87  |  0.48                   |  -1.82                  |  12.68          |  0                              |  248 
+depress   |  3.50   |  6.37                   |  0.36                   |  2.99           |  0                              |  269
+"
+
+df <- read.delim(textConnection(my.data),header=FALSE,sep="|",strip.white=TRUE,stringsAsFactors=FALSE)
+names(df) <- unname(as.list(df[1,])) # put headers on
+df <- df[-1,] # remove first row
+row.names(df)<-NULL
+pander(df, style = 'rmarkdown')
+
+```
+
+
+Inspection of standardized normal scores for skewness and kurtosis indicated that age is within the acceptable range of +/-2 and will be considered normal. Height is very close the acceptable range of +/-2 in terms of skewness but marginally passes it. However, given that 100% of the standardised scores fall within +-3.29, it will be considereded as approaching normality. Weights kurtosis and skewness do not fall withing the acceptablerange of +-2, however, only 1 of it's values (0.37%) falls outside the acceptable range of +-3.29 and will be considered normal.
+
+  For the outlier which occurs in weight, given that this value does not seem to be an error as we are unable to prove it, we will leave it in our dataset but acknowledge it's existence.
+
+
+Hence, our continous variables will be considered approaching normality for this experiment.
+
+### 2.2.6 Sex (sex)
+
+Sex is represented by a categorical variable in the dataset. The dataset contains data from 150 female respondents and 121 male respondents.
+
+At June 2017, there were 193,900 more females than males residing in Australia, with 12.2 million males and 12.4 million females.(Australian Bureau of Statistics, 2018).
+
+So we believe our data gives us a fair representativeness of both genders.
+
+```{r variable_insp_sex}
+table(sleepRegData$sex)
+
+#Get descriptive stastitics by group
+describeBy(sleepRegData$weight, sleepRegData$sex)
+```
+
+```{r bar_gender}
+genderPlot <- ggplot(sleepRegData, aes(sex,weight)) +
+              stat_summary(fun.y = mean, geom = 'bar', color='black',fill='white') +
+              stat_summary(fun.data = mean_cl_normal, geom = 'pointrange', size=0.2) + 
+              labs(x='Gender',y='Mean Weight',title="Figure 9: Mean Weight by Gender") 
+genderPlot
+```
+
+
+### 2.2.7 Report of Gender weight
+
+From figure 9 and our descriptive stat, we notice that males have a greater Weight than their female counterpart. We observed higher mean and median levels in males (mean =82.45, median=80, n=111) compared to females (mean=66.09,median=65, n=138)
+
+### 2.2.8 Cases and Missing Values
+
+For this research, cases wth missing values were Ignored.
+
+## 2.3 Previous statistical tests
+
+As our data has met the assumption of normality and we have established a significant relationship between our predictors and outcome variable. There is enough evidence to support their inclusion as predictors into our regression models.
+
+### 2.3.1 Correlation
+```{r}
+# Pairs Panels showing histogram and density curve of variables and scatter plot and pearson correlation between them
+pairs.panels(sleepRegData[,-4])
+```
+
+From the Pearson Correlation on the Pairs Panel plot and the correlation tests below, we observe;
+
+```{r}
+cor.test(sleepRegData$weight, sleepRegData$height)
+```
+
+A significant moderate positive correlation between weight and height r=(.56), p<.05
+
+The covariance is another measure of the relationship between the two vairables. It shows how changes in one variable affect the other variable.
+
+Our covariance for weight and height is `r round(cov(sleepRegData$weight, sleepRegData$height, use="pairwise.complete.obs"),2)`
+
+```{r}
+cor.test(sleepRegData$weight, sleepRegData$age)
+
+```
+
+A significant very weak negative correlation between weight and age r=(-.15) p<.05
+
+ Our covariance for weight and age is `r round(cov(sleepRegData$weight, sleepRegData$age, use="pairwise.complete.obs"),2)`
+
+
+```{r}
+cor.test(sleepRegData$age, sleepRegData$height)
+
+```
+
+Notice a non significant very weak negative correlation between age and height r=(-.01), p= .87
+ 
+
+### 2.3.2 Difference
+
+We check if our data has violated the homegeinity rule with levenes test.
+
+```{r}
+leveneTest(sleepRegData$weight,sleepRegData$sex, median)
+```
+
+From the test, we can see that homogeinity has not been violated in our data p > .05
+
+We run our t test
+
+```{r}
+genderTest <- t.test(weight ~ sex, data = sleepRegData)
+genderTest
+```
+
+Calculate the effect size.
+
+```{r}
+genderTest_t <- genderTest$statistic[[1]]
+genderTest_df <- genderTest$parameter[[1]]
+genderTest_r <- sqrt(genderTest_t^2/(genderTest_t^2+genderTest_df))
+genderTest_r
+```
+
+A Levene's test for homogeneity of variance was conducted and indicated equality of variance for Weight for male and female respondents (F(1,247) =0.21, P=.64). 
+
+An independent-samples t-test was conducted to compare Weight for male and female respondents. A significant difference was found 
+(m=`r mean(sleepRegData$weight[sleepRegData$sex=='Female'], na.rm=TRUE)`, sd=`r sd(sleepRegData$weight[sleepRegData$sex=='Female'], na.rm=TRUE)`) for female respondents, (m=`r mean(sleepRegData$weight[sleepRegData$sex=='Male'], na.rm=TRUE)`, sd=`r sd(sleepRegData$weight[sleepRegData$sex=='Male'], na.rm=TRUE)`) for male respondents with (t(222)= -9.78, p < .05). 
+
+Based on Cohen's d, a large effect size `r genderTest_r` was found.
+
+# 3 Regression
+
+We intend to build to multiple regression models to predict weight, using height, age and sex as predictors.
+
+Missing data will not be imputed, they will be left out of the model. For the reason that replacing the missing data is from a variety if respondents with varying features. imputing them will affect our model so ignoring them when we build our models will be better as we still have a relatively large sample dataset in terms of this project.
+
+In the case of outliers, we will not remove them completely. Outliers will be acknowledged, and the bias they introduce will also be acknowledged. However, the model will be done again without the outliers to compare the effect of removing the outlier from the model and leaving the outlier in the model. This will be done for every model in this research.
+
+Our first (baseline) model will be a model using only height and age as predictors.
+
+Our second model will add sex as a predictor to see the difference in predicting power tha occurs when adding a nominal variable of sex.
+
+Our data would be randomised and divided into two. 70% for the training data set to train our model and the remaining 30% into the test data set ot test our model.
+
+```{r}
+
+sleepRegDataM <- sleepRegData
+set.seed(2)
+rows <- sample(nrow(sleepRegDataM))
+sleepRegDataM <- sleepRegDataM[rows, ]
+
+split <- round(nrow(sleepRegDataM) * .70)
+training_data <- sleepRegDataM[1:split, ]
+
+test_data <- sleepRegDataM[(split + 1):nrow(sleepRegDataM), ]
+
+```
+
+## 3.1 Base Model
+
+Null Hypothesis: There will be no significant prediction of weight by height, and age.
+
+We create a regression model to predict weight from height, and age.
+
+**train model**
+```{r}
+base_model <- lm(weight ~ height + age, data = training_data)
+summary(base_model)
+lm.beta(base_model)
+```
+
+**test model**
+```{r}
+test_base_model <- predict(base_model, test_data)
+difference <-   test_data$weight - test_base_model
+
+# Calculate RMSE
+sqrt(mean(difference^2, na.rm = T))
+
+```
+
+From our model summary;
+
+
+**height**
+
+our height estimate gives us the slope. A 1 unit increase in height changes the Weight by .81
+
+The estimate in variability std error for depression is .103.
+
+The t value gives us how big the estimate is relative to the std. error it is 7.85.
+
+Pr(>|t|) tells us our depression predictor is statistically significant at p < .05.
+
+
+**age**
+
+our age estimate gives us the slope. for a 1 unit increase in Age changes the Weight by .23.
+
+The estimate in variability std error for age is .087.
+
+The t value gives us how big the estimate is relative to the std. error it is 2.64
+
+Pr(>|t|) tells us our age predictor is statistically significant at p < .05.
+
+
+**Residual Standard Error**
+
+This is the average error in our model (13.16), how well it predicts Weight.
+
+Hence, from our base model regression we estimate an error rate of `r round((sigma(base_model)/mean(training_data$weight, na.rm=TRUE) * 100),2)`%
+
+**R-Squared**
+
+Our R-Squared value means our predictor variables account for 31.86% of the variation of Weight (R-Squared 0.3186; Adjusted R-Squared 0.3098).
+
+Our R-Squared and Adjusted R-Squared are very similar indicating good cross validity of our model.
+
+**F-Statistic**
+
+Measures the overall significance of our model.
+
+Based on our data, a significant regression model was found at F(2,155) = 36.24, p < 0.05. 
+
+Hence we can say our model is significantly better than not having a model. **We Reject the Null Hypothesis**
+
+From our prediction;
+
+**Root Mean Square Error**
+
+The standard deviation of the prediction error. `r sqrt(mean(difference^2, na.rm = T))`
+
+**Outliers**
+```{r}
+bm_df <- as.data.frame(base_model$residuals)
+names(bm_df) <- 'residuals'
+base_model_outliers <- bm_df %>% 
+  filter(scale(residuals) >3.29 | scale(residuals) < -3.29)
+
+#count them using dplyr summarize
+num_base_model_outliers<-base_model_outliers %>% summarize(count=n())
+fullcount_base_model<-bm_df %>% summarize(count=n())
+
+# % outside range
+round((num_base_model_outliers/fullcount_base_model)*100, digits=2)
+
+plot(cooks.distance(base_model))
+max(cooks.distance(base_model))
+
+```
+
+Analysis of the standardised residuals showed `r round((num_base_model_outliers/fullcount_base_model)*100, digits=2)`%, (`r num_base_model_outliers` case(s)) of residuals outside the limits of +/-3.29.
+
+Analysis of cooks distance showed the outlier, but however also showed no value greater than 1.
+
+We therefore acknowledge this outlier and the bias it potentially introduces to our model. 
+
+**Diagnostic Plots**
+
+```{r}
+plot(base_model)
+```
+
+The residual vs fitted plot gives us the predicted values on the x asis and residuals on the Y.
+
+The red line shows us the linearity assumption has been met as it is fairly flat.
+
+Our points are in a constant pattern that show us variation is contstant. 
+
+The normal Q-Q Plot, the y axis is the ordered observed standardized residuals while the x axis is the ordered theoretical residuals. This is what we expect the residuals to be if the errors are normally distributed.
+
+We see from the Q-Q plot our our residuals aare roughly normally distributed as the fall along the diagonal line.
+
+From the scale-location plot we can see the assumption of equal variance has been met.
+
+The residual vs leverage plot shows us no influential cases as all our points are within the dashed cooks distance line. We do however notice a point (our earlier indentified outlier in our variable inspection) close but still within the line. 
+
+We will analyse the standardised residuals 
+
+```{r}
+
+plot(density(resid(base_model))) 
+leveragePlots(base_model)
+```
+
+
+The density plot of the residuals also shows the residuals are roughly normally distributed, however, the outlier slightly distorts this.
+
+
+```{r}
+
+# vif
+vif(base_model)
+
+#tolerance
+1/vif(base_model)
+
+```
+
+Our Vif values are below 10 and our tolerance 1/vif are above 0.1 indicating no multicolinearity in our model. This simply means our predictors are not highly correlated to each other.
+
+### 3.1.1 Base Model Interpretation
+
+A multiple regression analysis was conducted to determine if an individuals height and Age could predict an individuals weight.
+
+A significant regression model was found (F(2,155)= 36.24, p<.05) with the predictors being able to explain approx. 32% of the variation in weight. As the multiple R-Squared was .317 and adjusted R-Squared of .310. The similarity in both the multiple and adjusted R-Squared indicated good cross validity of our model.
+
+A coefficient shows the change in our outcome variable given a unit of change in a predictor variable. we add these coefficients and the intercept to predict our outcome.
+
+The values for the coefficients give us the coefficient values for our linear equation.
+
+From the model, our equation is;
+
+    weight = -74.138 + 0.811(height) + 0.232(age)
+    
+Using the mean height and age as example;
+  
+    -74.138 + 0.811 * (170.22) + 0.232 * (43.87) = 74.09
+
+All 3 predictors were significant at p <.05.
+
+From the diagnostic plots, examination of the density, normal Q-Q plot of standardised residuals and residuals vs fitted plot showed linearity, normal distribution of residuals and no obvious outliers and homogeniety of variance. The data also meets the assumption of non-zero variances of predictors.
+
+Analysis of cooks distance showed no undue influence.
+
+However, as a result of the outlier, we do notice it's effect on our plots. However, in a later section we will still analyse and compare our model without this outlier
+
+Examination for multicollinearity showed that the tolerance and variance influence factor measures where within acceptable levels (vif < 10; tolerance > 0.1) as outlined in (Field, Miles, & Field, 2012).
+
+As our dataset was split into training and test, the model was run on the test dataset. If a correlation test were to be run on our predicted values and actual values a high positive correlation would be found.
+
+We however use the RMSE to show the standard deviation of our prediction error. The RMSE for our base model with the outlier is `r round(sqrt(mean(difference^2, na.rm = T)),2)`
+
+*Our regression model allows us to reject the null hypothesis that there will be no significant prediction of weight by height and age*
+
+## 3.2 Second Model
+
+Null Hypothesis: There will be no significant prediction of weight by height, Age and sex
+
+We add sex to our regression model to test for a difference in prediction power. 
+
+**train model**
+```{r}
+sex_model <- lm(weight ~ height + age + sex, data = training_data)
+summary(sex_model)
+lm.beta(sex_model)
+```
+
+**test model**
+```{r}
+test_sex_model <- predict(sex_model, test_data)
+difference <-   test_data$weight - test_sex_model
+
+# Calculate RMSE
+sqrt(mean(difference^2, na.rm = T))
+```
+
+From our model summary;
+
+
+**height**
+
+our height estimate gives us the slope. A 1 unit increase in height changes the Weight by .44
+
+The estimate in variability std error for depression is .141.
+
+The t value gives us how big the estimate is relative to the std. error it is 3.16.
+
+Pr(>|t|) tells us our depression predictor is statistically significant at p < .05.
+
+
+**age**
+
+our age estimate gives us the slope. for a 1 unit increase in Age changes the Weight by .219.
+
+The estimate in variability std error for age is .085.
+
+The t value gives us how big the estimate is relative to the std. error it is 2.59
+
+Pr(>|t|) tells us our age predictor is statistically significant at p < .05.
+
+**sex**
+
+our sexMale estimate gives us the slope for when the sex is Male As this is a categorical value and not continous, it estimates an increase by 1.12 when the sex is male and 0 when the sex is female.
+
+The estimate in variability std error for depression is 2.896.
+
+The t value gives us how big the estimate is relative to the std. error it is 3.66.
+
+Pr(>|t|) tells us our sex predictor is statistically significant at p < .001.
+
+
+**Residual Standard Error**
+
+This is the average error in our model (13.16), how well it predicts Weight.
+
+Hence, from our sex model regression we estimate an error rate of `r round((sigma(sex_model)/mean(training_data$weight, na.rm=TRUE) * 100),2)`%
+
+**R-Squared**
+
+Our R-Squared value means our predictor variables account for 37.31% of the variation of Weight (R-Squared 0.3731; Adjusted R-Squared 0.3609).
+
+Our R-Squared and Adjusted R-Squared are very similar indicating good cross validity of our model.
+
+**F-Statistic**
+
+Measures the overall significance of our model.
+
+Based on our data, a significant regression model was found at F(3,154) = 30.56, p < 0.05. 
+
+Hence we can say our model is significantly better than not having a model. **We Reject the Null Hypothesis**
+
+From our model prediction;
+
+**Root Mean Square Error**
+
+The standard deviation of the prediction error. `r sqrt(mean(difference^2, na.rm = T))`
+
+**Outliers**
+```{r}
+sm_df <- as.data.frame(sex_model$residuals)
+names(sm_df) <- 'residuals'
+sex_model_outliers <- bm_df %>% 
+  filter(scale(residuals) >3.29 | scale(residuals) < -3.29)
+
+#count them using dplyr summarize
+num_sex_model_outliers<-sex_model_outliers %>% summarize(count=n())
+fullcount_sex_model<-bm_df %>% summarize(count=n())
+
+# % outside range
+round((num_sex_model_outliers/fullcount_sex_model)*100, digits=2)
+
+plot(cooks.distance(sex_model))
+max(cooks.distance(sex_model))
+
+```
+
+Analysis of the standardised residuals showed `r round((num_base_model_outliers/fullcount_base_model)*100, digits=2)`%, (`r num_base_model_outliers` case(s)) of residuals outside the limits of +/-3.29.
+
+Analysis of cooks distance showed the outlier, but however also showed no value greater than 1.
+
+We therefore acknowledge this outlier and the bias and influence it introduces to our model. However, given the influence still falls within the acceptable value we will not remove it.
+
+**Diagnostic Plots**
+
+```{r}
+plot(sex_model)
+```
+
+The residual vs fitted plot gives us the predicted values on the x asis and residuals on the Y.
+
+The red line shows us the linearity assumption has been met as it is fairly flat.
+
+Our points are in a constant pattern that show us variation is contstant. 
+
+The normal Q-Q Plot, the y axis is the ordered observed standardized residuals while the x axis is the ordered theoretical residuals. This is what we expect the residuals to be if the errors are normally distributed.
+
+We see from the Q-Q plot our our residuals aare roughly normally distributed as the fall along the diagonal line.
+
+From the scale-location plot we can see the assumption of equal variance has been met.
+
+The residual vs leverage plot shows us no influential cases as all our points are within the dashed cooks distance line. We do however notice a point (our earlier indentified outlier in our variable inspection) close but still within the line. 
+
+We will analyse the standardised residuals 
+
+```{r}
+
+plot(density(resid(sex_model))) 
+leveragePlots(sex_model)
+```
+
+
+The density plot of the residuals also shows the residuals are roughly normally distributed, however, the outlier slightly distorts this.
+
+
+```{r}
+
+# vif
+vif(sex_model)
+
+#tolerance
+1/vif(sex_model)
+
+```
+
+Our Vif values are below 10 and our tolerance 1/vif are above 0.1 indicating no multicolinearity in our model. This simply means our predictors are not highly correlated to each other.
+
+### 3.2.1 Sex Model Interpretation
+
+A multiple regression analysis was conducted to determine if an individuals height, Age and the added difference of sex could predict an individuals weight.
+
+A significant regression model was found (F(3,154)= 30.56, p<.05) with the predictors being able to explain approx. 37% of the variation in weight. As the multiple R-Squared was .373 and adjusted R-Squared of .361. The similarity in both the multiple and adjusted R-Squared indicated good cross validity of our model.
+
+A coefficient shows the change in our outcome variable given a unit of change in a predictor variable. we add these coefficients and the intercept to predict our outcome.
+
+The values for the coefficients give us the coefficient values for our linear equation.
+
+From the model, our equation is;
+
+    weight = -16.010 +  0.445(height) + 0.219(age) + 10.596(sexMale)
+    
+Using the mean height and age and male as example;
+  
+    -16.010 + 0.445 * (170.22) + 0.219 * (43.87) + 10.596 * (1) = 79.94
+
+Using the mean height and age and female as example;
+  
+    -16.010 + 0.445 * (170.22) + 0.219 * (43.87) + 10.596 * (0) = 69.35
+
+All predictors were significant at p <.05.
+
+From the diagnostic plots, examination of the density, normal Q-Q plot of standardised residuals and residuals vs fitted plot showed linearity, normal distribution of residuals and no obvious outliers and homogeniety of variance. The data also meets the assumption of non-zero variances of predictors.
+
+Analysis of cooks distance showed no undue influence.
+
+Examination for multicollinearity showed that the tolerance and variance influence factor measures where within acceptable levels (vif < 10; tolerance > 0.1) as outlined in (Field, Miles, & Field, 2012).
+
+As our dataset was split into training and test, the model was run on the test dataset. If a correlation test were to be run on our predicted values and actual values a high positive correlation would be found.
+
+We however use the RMSE to show the standard deviation of our prediction error. The RMSE for our sex model with the outlier is `r round(sqrt(mean(difference^2, na.rm = T)),2)`
+
+*Our regression model allows us to reject the null hypothesis that there will be no significant prediction of weight by height and age*
+
+## 3.3 Model Comparisons
+
+Null Hypothesis: There will be no significant difference in both the baseline and Height models.
+
+```{r}
+anova(base_model,sex_model)
+```
+
+Comparing our models, we see that the Height model is significantly better i.e. it has a lower RSS (24684) and PR(>F) < .001.
+
+Looking back at the RSE for both models the Height models has a lower RSE of 2.493 compared to 2.703 on the baseline model.
+
+Recall, our dataset was divided into training and testing. Our RMSE for the Sex model (model 2) (11.84) was lower than that of the baseline model (11.86)
+
+This indicates a better predicting power from the sex model compared to the baseline model.
+
+Hence we can reject our null hypothesis that the models do not significantly differ.
+
+## 3.4 Model without Outliers
+
+In this section, a quick rundown of the model without the outlier(s) in order to compare the difference in the model without the bias provided by it.
+
+There is no concrete reason to remove the outlier. There is no precendence that the values collected from that respondent was incorrect. However, given the impact of outliers on a model, this section evaluates all the previous models without the outlier(s).
+
+**dfbetas for outlier**
+df betas was used to check the effect of the outlier on the coefficient
+
+```{r}
+dfbetas(base_model)[84,]
+dfbetas(sex_model)[84,]
+```
+ 
+ Above, we see the change to our intercepts on each model if we remove the outlier. A big or small difference is relative, we can now run our analysis again without this outlier to examine the effect.
+
+**train base model No Outlier**
+```{r}
+sleepRegDataNO <- sleepRegData
+set.seed(2)
+rows <- sample(nrow(sleepRegDataNO))
+sleepRegDataNO <- sleepRegDataNO[rows, ]
+sleepRegDataNO <- sleepRegDataNO[-103,]
+
+split <- round(nrow(sleepRegDataNO) * .70)
+training_data <- sleepRegDataNO[1:split, ]
+
+test_data <- sleepRegDataNO[(split + 1):nrow(sleepRegDataNO), ]
+
+training_data_nooutlier <- training_data
+
+base_model_nooutlier <- lm(weight ~ height + age, data = training_data_nooutlier)
+summary(base_model_nooutlier)
+```
+
+**test base model No Outlier**
+```{r}
+test_base_model_nooutlier <- predict(base_model_nooutlier, test_data)
+difference_nooutlier <-   test_data$weight - test_base_model_nooutlier
+
+# Calculate RMSE
+sqrt(mean(difference_nooutlier^2, na.rm = T))
+
+```
+
+** Check for new outliers **
+```{r}
+bm_no_df <- as.data.frame(base_model_nooutlier$residuals)
+names(bm_no_df) <- 'residuals'
+base_model_no_outlier <- bm_no_df %>% 
+  filter(scale(residuals) >3.29 | scale(residuals) < -3.29)
+
+#count them using dplyr summarize
+num_base_model_nooutlier_outliers<-base_model_no_outlier %>% summarize(count=n())
+fullcount_base_model_nooutlier<-bm_no_df %>% summarize(count=n())
+
+# % outside range
+round((num_base_model_nooutlier_outliers/fullcount_base_model_nooutlier)*100, digits=2)
+```
+
+**Diagnostic Plots Sex Model No Outlier**
+```{r}
+plot(base_model_nooutlier)
+plot(cooks.distance(base_model_nooutlier))
+plot(density(resid(base_model_nooutlier))) 
+leveragePlots(base_model_nooutlier)
+
+# vif
+vif(base_model_nooutlier)
+#tolerance
+1/vif(base_model_nooutlier)
+```
+
+**train sex model No Outlier**
+```{r}
+sex_model_nooutlier <- lm(weight ~ height + age + sex, data = training_data_nooutlier)
+summary(sex_model_nooutlier)
+```
+
+**test sex model No Outlier**
+```{r}
+test_sex_model_nooutlier <- predict(sex_model_nooutlier, test_data)
+difference__sex_nooutlier <-   test_data$weight - test_sex_model_nooutlier
+
+# Calculate RMSE
+sqrt(mean(difference__sex_nooutlier^2, na.rm = T))
+
+```
+
+** Check for new outliers **
+```{r}
+sm_no_df <- as.data.frame(sex_model_nooutlier$residuals)
+names(sm_no_df) <- 'residuals'
+sex_model_no_outliers <- sm_no_df %>% 
+  filter(scale(residuals) >3.29 | scale(residuals) < -3.29)
+
+#count them using dplyr summarize
+num_sex_model__no_outliers<-sex_model_no_outliers %>% summarize(count=n())
+fullcount_sex_model_no<-sm_no_df %>% summarize(count=n())
+
+# % outside range
+round((num_sex_model__no_outliers/fullcount_sex_model_no)*100, digits=2)
+```
+
+**Diagnostic Plots Sex Model No Outlier**
+```{r}
+plot(sex_model_nooutlier)
+plot(cooks.distance(sex_model_nooutlier))
+plot(density(resid(sex_model_nooutlier))) 
+leveragePlots(sex_model_nooutlier)
+
+# vif
+vif(sex_model_nooutlier)
+#tolerance
+1/vif(sex_model_nooutlier)
+```
+
+**Outlier Model Comparisons**
+
+```{r}
+anova(base_model,sex_model)
+```
+
+## 3.4.1 Outlier Model Interpretatin
+
+Our base model and Sex model were rebuilt without the outlier to investigate the difference. using dfbetas to investigate the change in the coefficients without the outlier, we noticed a large difference especially in the age coeffcient.
+
+Reviewing the base model, we see the RSE has reduced from 13.16 with the outlier to 11.68 without, while the R-Squared has gone up from .319 to.341.
+
+For our test dataset, our RMSE has reduced from 11.86 with the outlier to 11.78
+
+Reviewing the sex model, we see the RSE has reduced from 12.66 with the outlier to 11.22 without, while the R-Squared has gone up from .373 to.396.
+
+For our test dataset, our RMSE has reduced from 11.83 with the outlier to 11.73
+
+A coefficient shows the change in our outcome variable given a unit of change in a predictor variable. we add these coefficients and the intercept to predict our outcome.
+
+Remember, by removing the outlier our coefficients have changed. Our equations are now;
+
+    weight = -66.383 + 0.778(height) + 0.171(age)
+
+    weight = -14.175 +  0.449(height) + 0.162(age) + 9.564(sexMale)
+
+An example with the mean height and age using the equations
+    
+    -66.383 + 0.778 * (170.22) +  0.171 * (43.87) = 73.55
+  
+Using the mean height and age and male as example;
+  
+    -14.175 + 0.449 * (170.22) +  0.162 * (43.87) + 9.564 * (1) = 78.92
+
+Using the mean height and age and female as example;
+  
+    -14.175 + 0.449 * (170.22) +  0.162 * (43.87) + 9.564 * (0) = 69.36
+    
+Testing the equation by substituting the mean values for our variables, we notice a slight change from the model with the outlier.
+
+Analysis of the cooks distance plot after removing the outlier shows a lot of change, the distance between points is a lot more balanced as opposed to the outlier far off in the earlier models.
+
+The diagnostic plots show better visualisation to prove the assumptions of linearity, normal distribution of residuals, homogeineity of varianve and non zero variance of predictors.
+
+Examination for multicollinearity showed that the tolerance and variance influence factor measures where within acceptable levels (vif < 10; tolerance > 0.1) 
+
+
+# 4. Final Discussions
+
+The aim of this paper was to build multiple linear regression models capable of predicting Weight better than just taking the mean. Initially, a relationship test between Weight and height showed a significant moderate postive relationship between them r=(.56), p<.05 with a covariance of 88.73, a relationship test between Weight and age showed a significant very weak postive relationship between them  r=(.15), p<.05 with a covariance of 29.79. The test of difference between Weight and sex showed males had significantly higher levels of weight than females t(222)= -9.78, p < .05. Based on Cohen's d. a large effect size .549 was found meaning, we should take care when using the difference.
+
+Once the significant variables were identified our baseline model was built using height and age as the predictor variables. The model was significant and was capable of predicting approx. 32% of the variance in Weight, with all our predictors having a significant effect on the Weight.
+
+For the 2nd model, the Sex model, Sex was added as a predictor to the baseline model after observing a significant difference between weight in males and females.
+
+The Sex model was capable of predicting approx. 37% of the variance in Weight, with all our predictors having a significant effect on the Weight.
+
+The two models were compared and a significant difference was observed p < .05. the second model had a lower RSS of 24684 and  RSE of 13.16 compared to RSS of 26830 and RSE of 12.66 on the baseline model indicating a better predicting power from the Height model compared to the baseline model.
+
+The models were relatively similar, but the effect of the sex coefficient added a new dynamic to the models. A coefficient is the value of change in our outcome variable given a unit of change in the predictor varialbe.
+
+The base model and sex model (2nd model) were rebuilt without the outlier. both models reported better RSE and R-Squared values (11.68, 0.341) and (11.22, 0.396) respectively. The diagnosis plots were slightly better in meeting with assumptions of regression i.e linearity, equal variance, no overly influential points and normal distribution of errors.
+
+inspecting the results of the dfbetas showed the age coefficient was most affected by removing the outlier.
+
+Given the close similarity between them, I see no benefit of removing the outlier from our model. However, size is relative. But given the baseline model without the outlier had a better RSE, R-Squared, RMSE than the sex model wtith the outlier, it is worth taking that into note when deciding to drop the outlier.
+
+For our RMSE, each model had better values i.e. the baseline model (11.84) < sex model (11.86) < baseline model (no outlier) (11.78) < sex model (no outlier) (11.74).
+
+Given the results in our model, a recollection of the data from the same sample to compare if any differences occur would be an interesting test. As new predictors could be discovered.
+
+
+# 5. References
+
+Australian Bureau of Statistics. (2018, September 28). Regional Population by Age and Sex, Australia, 2017. Australia.
+
+Field, A., Miles, J., & Field, Z. (2012). Discovering Statistics Using R. London: SAGE Publications Ltd.
+
+George, D., & Mallery, P. (2010). SPSS for Windows Step by Step: A Simple Guide and Reference 17.0 Update. 10th Edition. Boston: Pearson.
+
+Johnson, E. O., Roth, T., & Breslau, N. (2006). The association of insomnia with anxiety disorders and depression: Exploration of the direction of risk. Journal of Psychiatric Research, 700-708.
+
+Klerman, G. L. (2013). Anxiety and depression. In G. D. Burrows, Handbook of studies on depression (pp. 49-68). Amsterdam: Elsevier.
+
+# 6. Appendix
+
+```{r}
+dfbetas(base_model)
+dfbetas(sex_model)
+```
+
